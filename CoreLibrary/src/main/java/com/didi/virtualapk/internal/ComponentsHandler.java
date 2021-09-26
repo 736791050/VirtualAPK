@@ -72,6 +72,11 @@ public class ComponentsHandler {
         return intent;
     }
 
+    /**
+     * 将真正需要打开的 activity 信息存储到 category
+     * 替换成占坑 activity
+     * @param intent
+     */
     public void markIntentIfNeeded(Intent intent) {
         if (intent.getComponent() == null) {
             return;
@@ -87,7 +92,9 @@ public class ComponentsHandler {
                 intent.putStringArrayListExtra(Constants.KEY_CATEGORY, new ArrayList<>(categories));
                 categories.clear();
             }
+            // va.intent.category.package.targetPackageName
             intent.addCategory(Constants.CATEGORY_PREFIX_TARGET_PACKAGE + targetPackageName);
+            // va.intent.category.activity.targetClassName
             intent.addCategory(Constants.CATEGORY_PREFIX_TARGET_ACTIVITY + targetClassName);
             dispatchStubActivity(intent);
         }

@@ -72,6 +72,7 @@ public class LocalService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        // sticky 被杀死后，重启
         if (null == intent || !intent.hasExtra(EXTRA_TARGET) || !intent.hasExtra(EXTRA_COMMAND)) {
             return START_STICKY;
         }
@@ -97,10 +98,12 @@ public class LocalService extends Service {
                 IApplicationThread appThread = mainThread.getApplicationThread();
                 Service service;
 
+                // 如果 service 已经存在，直接使用
                 if (this.mPluginManager.getComponentsHandler().isServiceAvailable(component)) {
                     service = this.mPluginManager.getComponentsHandler().getService(component);
                 } else {
                     try {
+                        // 如果不存在，创建 service
                         service = (Service) plugin.getClassLoader().loadClass(component.getClassName()).newInstance();
 
                         Application app = plugin.getApplication();
@@ -108,6 +111,7 @@ public class LocalService extends Service {
                         Method attach = service.getClass().getMethod("attach", Context.class, ActivityThread.class, String.class, IBinder.class, Application.class, Object.class);
                         IActivityManager am = mPluginManager.getActivityManager();
 
+                        // 模拟 service  attach onCreate
                         attach.invoke(service, plugin.getPluginContext(), mainThread, component.getClassName(), token, app, am);
                         service.onCreate();
                         this.mPluginManager.getComponentsHandler().rememberService(component, service);
@@ -116,6 +120,7 @@ public class LocalService extends Service {
                     }
                 }
 
+                // 调用 onStartCommand
                 service.onStartCommand(target, 0, this.mPluginManager.getComponentsHandler().getServiceCounter(service).getAndIncrement());
                 break;
             }
@@ -124,6 +129,7 @@ public class LocalService extends Service {
                 IApplicationThread appThread = mainThread.getApplicationThread();
                 Service service = null;
 
+                // 先找缓存，没有新建
                 if (this.mPluginManager.getComponentsHandler().isServiceAvailable(component)) {
                     service = this.mPluginManager.getComponentsHandler().getService(component);
                 } else {

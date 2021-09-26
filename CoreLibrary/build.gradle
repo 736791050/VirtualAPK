@@ -36,17 +36,17 @@ repositories {
 final String projectAndroidStub = ':AndroidStub'
 
 dependencies {
-    compile fileTree(dir: 'libs', include: ['*.jar'])
+    api fileTree(dir: 'libs', include: ['*.jar'])
 
-    provided project(projectAndroidStub)
+    compileOnly project(projectAndroidStub)
 
-    testCompile 'junit:junit:4.12'
+    testImplementation 'junit:junit:4.12'
 }
 
 // Using Stub classes first when compiling.
 afterEvaluate {
     project.android.libraryVariants.each { LibraryVariant variant ->
-        variant.javaCompile.doFirst { JavaCompile javaCompile ->
+        variant.getJavaCompiler().doFirst { JavaCompile javaCompile ->
             String projectAndroidStubPath = project.project(projectAndroidStub).projectDir.canonicalPath
 //            println "projectAndroidStubPath: ${projectAndroidStubPath}"
             File stubPath = javaCompile.classpath.find {
@@ -55,7 +55,8 @@ afterEvaluate {
             if (stubPath == null) {
                 throw new RuntimeException("reset bootclasspath error.")
             }
-            javaCompile.options.setBootClasspath(Joiner.on(File.pathSeparator).join(stubPath, javaCompile.options.bootClasspath))
+            FileCollection path = javaCompile.options.bootstrapClasspath
+            javaCompile.options.bootstrapClasspath = files(stubPath) + path
         }
     }
 }

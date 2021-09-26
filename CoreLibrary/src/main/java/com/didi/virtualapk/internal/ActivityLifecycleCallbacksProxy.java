@@ -10,7 +10,8 @@ import com.didi.virtualapk.utils.Reflector;
 import java.util.ArrayList;
 
 /**
- * Created by qiaopu on 2017/8/9.
+ * Created by qiaopu on 2017/8/9
+ * 反射获取 Application.mActivityLifecycleCallbacks, 通过代理方式回调生命周期
  */
 class ActivityLifecycleCallbacksProxy implements Application.ActivityLifecycleCallbacks {
     

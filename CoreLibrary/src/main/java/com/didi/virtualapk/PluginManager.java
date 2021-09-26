@@ -60,6 +60,8 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Created by renyugang on 16/8/9.
+ * 1. hook AMS H.callback ContentProvider Instrumentation
+ * 2. 管理插件
  */
 public class PluginManager {
 
@@ -217,16 +219,18 @@ public class PluginManager {
         try {
             Singleton<IActivityManager> defaultSingleton;
     
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) { // 8.0
                 defaultSingleton = Reflector.on(ActivityManager.class).field("IActivityManagerSingleton").get();
             } else {
                 defaultSingleton = Reflector.on(ActivityManagerNative.class).field("gDefault").get();
             }
             IActivityManager origin = defaultSingleton.get();
+            // 动态代理
             IActivityManager activityManagerProxy = (IActivityManager) Proxy.newProxyInstance(mContext.getClassLoader(), new Class[] { IActivityManager.class },
                 createActivityManagerProxy(origin));
 
             // Hook IActivityManager from ActivityManagerNative
+            // Singleton.mInstance
             Reflector.with(defaultSingleton).field("mInstance").set(activityManagerProxy);
 
             if (defaultSingleton.get() == activityManagerProxy) {
@@ -259,6 +263,11 @@ public class PluginManager {
         }
     }
 
+    /**
+     * 1. 唤醒预埋的 provider
+     * 2. 通过 ActivityThread.mProviderMap 找到对应 provider
+     * 3. 代理上述 provider
+     */
     protected void hookIContentProviderAsNeeded() {
         Uri uri = Uri.parse(RemoteContentProvider.getUri(mContext));
         mContext.getContentResolver().call(uri, "wakeup", null, null);
@@ -266,6 +275,7 @@ public class PluginManager {
             Field authority = null;
             Field provider = null;
             ActivityThread activityThread = ActivityThread.currentActivityThread();
+            // ArrayMap<ProviderKey, ProviderClientRecord> mProviderMap
             Map providerMap = Reflector.with(activityThread).field("mProviderMap").get();
             Iterator iter = providerMap.entrySet().iterator();
             while (iter.hasNext()) {
@@ -276,6 +286,10 @@ public class PluginManager {
                 if (key instanceof String) {
                     auth = (String) key;
                 } else {
+                    //     private static final class ProviderKey {
+                    //        final String authority;
+                    //        final int userId;
+                    //      }
                     if (authority == null) {
                         authority = key.getClass().getDeclaredField("authority");
                         authority.setAccessible(true);
@@ -300,6 +314,7 @@ public class PluginManager {
     }
 
     /**
+     * 加载、存储插件
      * load a plugin into memory, then invoke it's Application.
      * @param apk the file of plugin, should end with .apk
      * @throws Exception
@@ -320,8 +335,10 @@ public class PluginManager {
         if (null == plugin) {
             throw new RuntimeException("Can't load plugin which is invalid: " + apk.getAbsolutePath());
         }
-        
+
+        // 存储插件，key 为插件包名
         this.mPlugins.put(plugin.getPackageName(), plugin);
+        Log.i(TAG, "loadPlugin: " + plugin.getPackageName());
         synchronized (mCallbacks) {
             for (int i = 0; i < mCallbacks.size(); i++) {
                 mCallbacks.get(i).onAddedLoadedPlugin(plugin);

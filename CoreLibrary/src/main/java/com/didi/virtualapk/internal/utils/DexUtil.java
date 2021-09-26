@@ -30,6 +30,20 @@ import java.util.List;
 
 import dalvik.system.DexClassLoader;
 
+/**
+ *         BaseDexClassLoader
+ *           /          \
+ * DexClassLoader     PathClassLoader
+ *  (支持外部）             (仅系统）
+ *
+ *  BaseDexClassLoader
+ *       |
+ *  DexPathList pathList
+ *       |
+ *  Element[] dexElements  (List of dex/resource)
+ *  NativeLibraryElement[] nativeLibraryPathElements
+ *  List<File> nativeLibraryDirectories
+ */
 public class DexUtil {
     private static boolean sHasInsertedNativeLibrary = false;
 
@@ -38,19 +52,38 @@ public class DexUtil {
         Object newDexElements = getDexElements(getPathList(dexClassLoader));
         Object allDexElements = combineArray(baseDexElements, newDexElements);
         Object pathList = getPathList(baseClassLoader);
+        //将合并的 dexElements 设置到 baseClassLoader
         Reflector.with(pathList).field("dexElements").set(allDexElements);
 
         insertNativeLibrary(dexClassLoader, baseClassLoader, nativeLibsDir);
     }
 
+    /**
+     * 反射获取 dexElements
+     * @param pathList
+     * @return
+     * @throws Exception
+     */
     private static Object getDexElements(Object pathList) throws Exception {
         return Reflector.with(pathList).field("dexElements").get();
     }
 
+    /**
+     * 反射获取 pathList
+     * @param baseDexClassLoader
+     * @return
+     * @throws Exception
+     */
     private static Object getPathList(ClassLoader baseDexClassLoader) throws Exception {
         return Reflector.with(baseDexClassLoader).field("pathList").get();
     }
 
+    /**
+     * 合并 arrays
+     * @param firstArray
+     * @param secondArray
+     * @return
+     */
     private static Object combineArray(Object firstArray, Object secondArray) {
         Class<?> localClass = firstArray.getClass().getComponentType();
         int firstArrayLength = Array.getLength(firstArray);
@@ -77,10 +110,14 @@ public class DexUtil {
             Object baseNativeLibraryPathElements = reflector.field("nativeLibraryPathElements").get();
             final int baseArrayLength = Array.getLength(baseNativeLibraryPathElements);
 
+            // 找到插件中的 pathList
             Object newPathList = getPathList(dexClassLoader);
+            // 反射获取插件中的 nativeLibraryPathElements
             Object newNativeLibraryPathElements = reflector.get(newPathList);
             Class<?> elementClass = newNativeLibraryPathElements.getClass().getComponentType();
+            // 新建数组
             Object allNativeLibraryPathElements = Array.newInstance(elementClass, baseArrayLength + 1);
+            // 存储 base 的 nativeLibraryPathElements
             System.arraycopy(baseNativeLibraryPathElements, 0, allNativeLibraryPathElements, 0, baseArrayLength);
 
             Field soPathField;
@@ -90,16 +127,19 @@ public class DexUtil {
                 soPathField = elementClass.getDeclaredField("dir");
             }
             soPathField.setAccessible(true);
+            // 遍历插件的 nativeLibraryPathElements
             final int newArrayLength = Array.getLength(newNativeLibraryPathElements);
             for (int i = 0; i < newArrayLength; i++) {
                 Object element = Array.get(newNativeLibraryPathElements, i);
                 String dir = ((File)soPathField.get(element)).getAbsolutePath();
+                // 找到包含 valibs 路径的 NativeLibraryPathElement，添加到数组
                 if (dir.contains(Constants.NATIVE_DIR)) {
                     Array.set(allNativeLibraryPathElements, baseArrayLength, element);
                     break;
                 }
             }
 
+            // 设置 base + 插件融合的新数组
             reflector.set(allNativeLibraryPathElements);
         } else {
             Reflector reflector = Reflector.with(basePathList).field("nativeLibraryDirectories");

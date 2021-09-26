@@ -72,6 +72,8 @@ import dalvik.system.DexClassLoader;
 
 /**
  * Created by renyugang on 16/8/9.
+ *
+ * 代表一个加载的插件 apk
  */
 public class LoadedPlugin {
 
@@ -80,12 +82,22 @@ public class LoadedPlugin {
     protected File getDir(Context context, String name) {
         return context.getDir(name, Context.MODE_PRIVATE);
     }
-    
+
+    /**
+     * 创建 DexClassLoader
+     * @param context hostContext
+     * @param apk 插件 apk
+     * @param libsDir host libsDir
+     * @param parent  hostClassLoader
+     * @return
+     * @throws Exception
+     */
     protected ClassLoader createClassLoader(Context context, File apk, File libsDir, ClassLoader parent) throws Exception {
         File dexOutputDir = getDir(context, Constants.OPTIMIZE_DIR);
         String dexOutputPath = dexOutputDir.getAbsolutePath();
         DexClassLoader loader = new DexClassLoader(apk.getAbsolutePath(), dexOutputPath, libsDir.getAbsolutePath(), parent);
 
+        // 如果合并模式，将插件 dex 合并到 parent
         if (Constants.COMBINE_CLASSLOADER) {
             DexUtil.insertDex(loader, parent, libsDir);
         }
@@ -502,6 +514,14 @@ public class LoadedPlugin {
         return this.mProviders.get(name);
     }
 
+    /**
+     * 判断是否匹配
+     * 1.对象相同
+     * 2.className 相同且包名相同（和插件或 host 包名）
+     * @param component
+     * @param target
+     * @return
+     */
     protected boolean match(PackageParser.Component component, ComponentName target) {
         ComponentName source = component.getComponentName();
         if (source == target) return true;

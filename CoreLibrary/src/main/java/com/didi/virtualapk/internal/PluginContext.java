@@ -27,6 +27,8 @@ import android.content.res.Resources;
 
 /**
  * Created by renyugang on 16/8/12.
+ *
+ * PluginContext 返回的资源、主题、打开的 activity 都是插件的
  */
 class PluginContext extends ContextWrapper {
 

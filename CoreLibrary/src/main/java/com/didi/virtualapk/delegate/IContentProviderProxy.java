@@ -67,6 +67,7 @@ public class IContentProviderProxy implements InvocationHandler {
     }
 
     private void wrapperUri(Method method, Object[] args) {
+        // 寻找 uri 和 index
         Uri uri = null;
         int index = 0;
         if (args != null) {
@@ -79,6 +80,7 @@ public class IContentProviderProxy implements InvocationHandler {
             }
         }
 
+        // 如果是 call 方法，找到 Bundle，通过 bundle 获取 wrapper_uri
         Bundle bundleInCallMethod = null;
         if (method.getName().equals("call")) {
             bundleInCallMethod = getBundleParameter(args);
@@ -99,6 +101,7 @@ public class IContentProviderProxy implements InvocationHandler {
         if (info != null) {
             String pkg = info.packageName;
             LoadedPlugin plugin = pluginManager.getLoadedPlugin(pkg);
+            // 转换成代理 uri ：content://" + context.getPackageName() + ".VirtualAPK.Provider/?.plugin=xx&pkg=xx&uri=xx
             Uri wrapperUri = PluginContentResolver.wrapperUri(plugin, uri);
             if (method.getName().equals("call")) {
                 bundleInCallMethod.putString(RemoteContentProvider.KEY_WRAPPER_URI, wrapperUri.toString());

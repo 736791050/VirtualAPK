@@ -47,10 +47,11 @@ import java.util.List;
 
 /**
  * Created by renyugang on 16/8/10.
+ * 代理 Instrumentation，在 execStartActivity 方法中，替换要启动的 activity 为占坑 activity
  */
 public class VAInstrumentation extends Instrumentation implements Handler.Callback {
     public static final String TAG = Constants.TAG_PREFIX + "VAInstrumentation";
-    public static final int LAUNCH_ACTIVITY         = 100;
+    public static final int LAUNCH_ACTIVITY  = 100;
 
     protected Instrumentation mBase;
     
@@ -88,33 +89,53 @@ public class VAInstrumentation extends Instrumentation implements Handler.Callba
     }
     
     protected void injectIntent(Intent intent) {
+        // 保证 component 被设置
         mPluginManager.getComponentsHandler().transformIntentToExplicitAsNeeded(intent);
         // null component is an implicitly intent
         if (intent.getComponent() != null) {
             Log.i(TAG, String.format("execStartActivity[%s : %s]", intent.getComponent().getPackageName(), intent.getComponent().getClassName()));
             // resolve intent with Stub Activity if needed
+            // 将真正需要打开的 activity 信息存储到 category
+            // 替换成占坑 activity
             this.mPluginManager.getComponentsHandler().markIntentIfNeeded(intent);
         }
     }
 
+    /**
+     * 创建真正要打开的 activity, 并设置 resources
+     * @param cl
+     * @param className
+     * @param intent
+     * @return
+     * @throws InstantiationException
+     * @throws IllegalAccessException
+     * @throws ClassNotFoundException
+     */
     @Override
     public Activity newActivity(ClassLoader cl, String className, Intent intent) throws InstantiationException, IllegalAccessException, ClassNotFoundException {
         try {
+            // 如果能找到说明是 host activity
             cl.loadClass(className);
+            // com.didi.virtualapk.MainActivity
             Log.i(TAG, String.format("newActivity[%s]", className));
             
         } catch (ClassNotFoundException e) {
+            // 从 intent 中解析出真正要创建的 activity
             ComponentName component = PluginUtil.getComponent(intent);
             
             if (component == null) {
+                // 如果不是插件 actvivity 走 base
                 return newActivity(mBase.newActivity(cl, className, intent));
             }
-    
+
+            // 真正要打开的 activity
             String targetClassName = component.getClassName();
+            // newActivity[com.didi.virtualapk.core.A$1 : com.didi.virtualapk.demo/com.didi.virtualapk.demo.aidl.BookManagerActivity]
             Log.i(TAG, String.format("newActivity[%s : %s/%s]", className, component.getPackageName(), targetClassName));
     
             LoadedPlugin plugin = this.mPluginManager.getLoadedPlugin(component);
-    
+
+            // 如果没有发现，直接去 StubActivity 跳回主页
             if (plugin == null) {
                 // Not found then goto stub activity.
                 boolean debuggable = false;
@@ -132,16 +153,19 @@ public class VAInstrumentation extends Instrumentation implements Handler.Callba
                 Log.i(TAG, "Not found. starting the stub activity: " + StubActivity.class);
                 return newActivity(mBase.newActivity(cl, StubActivity.class.getName(), intent));
             }
-            
+
+            // 通过插件的 classloader 创建插件 activity
             Activity activity = mBase.newActivity(plugin.getClassLoader(), targetClassName, intent);
             activity.setIntent(intent);
     
             // for 4.1+
+            // 设置 resources
             Reflector.QuietReflector.with(activity).field("mResources").set(plugin.getResources());
     
             return newActivity(activity);
         }
 
+        // 兜底
         return newActivity(mBase.newActivity(cl, className, intent));
     }
     
@@ -164,13 +188,16 @@ public class VAInstrumentation extends Instrumentation implements Handler.Callba
     }
     
     protected void injectActivity(Activity activity) {
+        Log.i(TAG, "injectActivity: " + activity.getClass().getSimpleName());
         final Intent intent = activity.getIntent();
         if (PluginUtil.isIntentFromPlugin(intent)) {
             Context base = activity.getBaseContext();
             try {
                 LoadedPlugin plugin = this.mPluginManager.getLoadedPlugin(intent);
+                // 设置 resources
                 Reflector.with(base).field("mResources").set(plugin.getResources());
                 Reflector reflector = Reflector.with(activity);
+                // 设置 mBase 为 PluginContext
                 reflector.field("mBase").set(plugin.createPluginContext(activity.getBaseContext()));
                 reflector.field("mApplication").set(plugin.getApplication());
 
@@ -195,6 +222,8 @@ public class VAInstrumentation extends Instrumentation implements Handler.Callba
 
     @Override
     public boolean handleMessage(Message msg) {
+        Log.i(TAG, "handleMessage:" + msg.what);
+        // 9.0 以下才会回调
         if (msg.what == LAUNCH_ACTIVITY) {
             // ActivityClientRecord r
             Object r = msg.obj;
@@ -204,6 +233,7 @@ public class VAInstrumentation extends Instrumentation implements Handler.Callba
 //                intent.setExtrasClassLoader(mPluginManager.getHostContext().getClassLoader());
                 ActivityInfo activityInfo = reflector.field("activityInfo").get();
 
+                // 启动 activity 时，设置 theme
                 if (PluginUtil.isIntentFromPlugin(intent)) {
                     int theme = PluginUtil.getTheme(mPluginManager.getHostContext(), intent);
                     if (theme != 0) {
@@ -215,7 +245,6 @@ public class VAInstrumentation extends Instrumentation implements Handler.Callba
                 Log.w(TAG, e);
             }
         }
-
         return false;
     }
 
@@ -237,6 +266,7 @@ public class VAInstrumentation extends Instrumentation implements Handler.Callba
     protected Activity newActivity(Activity activity) {
         synchronized (mActivities) {
             for (int i = mActivities.size() - 1; i >= 0; i--) {
+                // WeakReference 持有，如果为空，认为被回收了
                 if (mActivities.get(i).get() == null) {
                     mActivities.remove(i);
                 }

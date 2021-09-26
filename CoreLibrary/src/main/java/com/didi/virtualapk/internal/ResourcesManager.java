@@ -46,34 +46,41 @@ import java.util.Objects;
  * Created by renyugang on 16/8/9.
  */
 class ResourcesManager {
-    
+
+    // VA.LoadedPlugin
     public static final String TAG = Constants.TAG_PREFIX + "LoadedPlugin";
 
     private static Configuration mDefaultConfiguration;
     
     public static synchronized Resources createResources(Context hostContext, String packageName, File apk) throws Exception {
+        // 7.0 以上
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             return createResourcesForN(hostContext, packageName, apk);
         }
-        
+
+        // 7.0 以下
         Resources resources = ResourcesManager.createResourcesSimple(hostContext, apk.getAbsolutePath());
         ResourcesManager.hookResources(hostContext, resources);
         return resources;
     }
     
     private static Resources createResourcesSimple(Context hostContext, String apk) throws Exception {
+        // 获取主应用的资源
         Resources hostResources = hostContext.getResources();
-        Resources newResources = null;
+        Resources newResources;
         AssetManager assetManager;
         Reflector reflector = Reflector.on(AssetManager.class).method("addAssetPath", String.class);
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
+            //小于 5.0 新建 assetManager
             assetManager = AssetManager.class.newInstance();
             reflector.bind(assetManager);
+            // Returns the cookie of the added asset, or 0 on failure
             final int cookie1 = reflector.call(hostContext.getApplicationInfo().sourceDir);;
             if (cookie1 == 0) {
                 throw new RuntimeException("createResources failed, can't addAssetPath for " + hostContext.getApplicationInfo().sourceDir);
             }
         } else {
+            // 5.0 ~ 6.0 使用 host assetManager
             assetManager = hostResources.getAssets();
             reflector.bind(assetManager);
         }
@@ -82,12 +89,14 @@ class ResourcesManager {
             throw new RuntimeException("createResources failed, can't addAssetPath for " + apk);
         }
         List<LoadedPlugin> pluginList = PluginManager.getInstance(hostContext).getAllLoadedPlugins();
+        // 遍历插件列表,依次加载资源
         for (LoadedPlugin plugin : pluginList) {
             final int cookie3 = reflector.call(plugin.getLocation());
             if (cookie3 == 0) {
                 throw new RuntimeException("createResources failed, can't addAssetPath for " + plugin.getLocation());
             }
         }
+        // 根据机型创建 resources
         if (isMiUi(hostResources)) {
             newResources = MiUiResourcesCompat.createResources(hostResources, assetManager);
         } else if (isVivo(hostResources)) {
@@ -100,6 +109,7 @@ class ResourcesManager {
             // is raw android resources
             newResources = new Resources(assetManager, hostResources.getDisplayMetrics(), hostResources.getConfiguration());
         }
+        // 最新合成的 resources 给到每个插件（每个插件都可以加载其他插件或host的资源）
         // lastly, sync all LoadedPlugin to newResources
         for (LoadedPlugin plugin : pluginList) {
             plugin.updateResources(newResources);
@@ -108,6 +118,14 @@ class ResourcesManager {
         return newResources;
     }
 
+    /**
+     * hook host
+     * 替换两个地方的 resoucre:
+     * 1. ContextImpl.mResources
+     * 2.ContextImpl.mPackageInfo(LoadedApk).mResources
+     * @param base
+     * @param resources
+     */
     public static void hookResources(Context base, Resources resources) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             return;
@@ -134,6 +152,7 @@ class ResourcesManager {
     }
     
     /**
+     * 7.0 以上直接用系统方法
      * Use System Apis to update all existing resources.
      * <br/>
      * 1. Update ApplicationInfo.splitSourceDirs and LoadedApk.mSplitResDirs
@@ -151,25 +170,29 @@ class ResourcesManager {
         String newAssetPath = apk.getAbsolutePath();
         ApplicationInfo info = context.getApplicationInfo();
         String baseResDir = info.publicSourceDir;
-        
+
+        // 1. Update ApplicationInfo.splitSourceDirs and LoadedApk.mSplitResDirs
         info.splitSourceDirs = append(info.splitSourceDirs, newAssetPath);
         LoadedApk loadedApk = Reflector.with(context).field("mPackageInfo").get();
     
         Reflector rLoadedApk = Reflector.with(loadedApk).field("mSplitResDirs");
         String[] splitResDirs = rLoadedApk.get();
         rLoadedApk.set(append(splitResDirs, newAssetPath));
-    
+
+        // 2. Replace all keys of ResourcesManager.mResourceImpls to new ResourcesKey
         final android.app.ResourcesManager resourcesManager = android.app.ResourcesManager.getInstance();
+        // private final ArrayMap<ResourcesKey, WeakReference<ResourcesImpl>> mResourceImpls = new ArrayMap<>();
         ArrayMap<ResourcesKey, WeakReference<ResourcesImpl>> originalMap = Reflector.with(resourcesManager).field("mResourceImpls").get();
     
         synchronized (resourcesManager) {
             HashMap<ResourcesKey, WeakReference<ResourcesImpl>> resolvedMap = new HashMap<>();
-    
+
+            // 8.1 9
             if (Build.VERSION.SDK_INT >= 28
                 || (Build.VERSION.SDK_INT == 27 && Build.VERSION.PREVIEW_SDK_INT != 0)) { // P Preview
                 ResourcesManagerCompatForP.resolveResourcesImplMap(originalMap, resolvedMap, context, loadedApk);
-
             } else {
+                // 7.0 ~ 8.0
                 ResourcesManagerCompatForN.resolveResourcesImplMap(originalMap, resolvedMap, baseResDir, newAssetPath);
             }
     
@@ -189,7 +212,13 @@ class ResourcesManager {
         Log.d(TAG, "createResourcesForN cost time: +" + (System.currentTimeMillis() - startTime) + "ms");
         return newResources;
     }
-    
+
+    /**
+     * 将 newPath 合并到 paths
+     * @param paths
+     * @param newPath
+     * @return
+     */
     private static String[] append(String[] paths, String newPath) {
         if (contains(paths, newPath)) {
             return paths;
@@ -203,7 +232,13 @@ class ResourcesManager {
         newPaths[newPathsCount - 1] = newPath;
         return newPaths;
     }
-    
+
+    /**
+     * 检查是否已经存在数组中
+     * @param array
+     * @param value
+     * @return
+     */
     @TargetApi(Build.VERSION_CODES.KITKAT)
     private static boolean contains(String[] array, String value) {
         if (array == null) {
@@ -303,7 +338,9 @@ class ResourcesManager {
         
         @TargetApi(Build.VERSION_CODES.JELLY_BEAN_MR1)
         public static void resolveResourcesImplMap(Map<ResourcesKey, WeakReference<ResourcesImpl>> originalMap, Map<ResourcesKey, WeakReference<ResourcesImpl>> resolvedMap, Context context, LoadedApk loadedApk) throws Exception {
+            // 存储 context/activity 和对应新建的 impl
             HashMap<ResourcesImpl, Context> newResImplMap = new HashMap<>();
+            // 存储原始 impl 和 key
             Map<ResourcesImpl, ResourcesKey> resKeyMap = new HashMap<>();
             Resources newRes;
         
@@ -336,10 +373,14 @@ class ResourcesManager {
         
             // Replace the resImpl to the new resKey and remove the origin resKey
             for (Map.Entry<ResourcesImpl, Context> entry : newResImplMap.entrySet()) {
+                // 找到原始的 key
                 ResourcesKey newKey = resKeyMap.get(entry.getKey());
+                // 找到原始的 impl
                 ResourcesImpl originResImpl = entry.getValue().getResources().getImpl();
-            
+
+                // 放入 resolvedMap
                 resolvedMap.put(newKey, new WeakReference<>(originResImpl));
+                // 移除旧的 TODO 后续再看原因，有点看不懂
                 resolvedMap.remove(resKeyMap.get(originResImpl));
             }
         }

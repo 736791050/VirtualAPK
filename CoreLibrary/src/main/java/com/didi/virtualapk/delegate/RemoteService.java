@@ -45,6 +45,7 @@ public class RemoteService extends LocalService {
             return super.onStartCommand(intent, flags, startId);
         }
 
+        // 新的进程，需要在新的进程加载 plugin
         Intent target = intent.getParcelableExtra(EXTRA_TARGET);
         if (target != null) {
             String pluginLocation = intent.getStringExtra(EXTRA_PLUGIN_LOCATION);

@@ -62,31 +62,42 @@ public class RemoteContentProvider extends ContentProvider {
         return true;
     }
 
+    /**
+     * 转换成代理 uri ：content://" + context.getPackageName() + ".VirtualAPK.Provider/?.plugin=xx&pkg=xx&uri=xx
+     * 通过 key_uri 找到真正打开的 provider
+     * @param uri
+     * @return
+     */
     private ContentProvider getContentProvider(final Uri uri) {
         final PluginManager pluginManager = PluginManager.getInstance(getContext());
         Uri pluginUri = Uri.parse(uri.getQueryParameter(KEY_URI));
         final String auth = pluginUri.getAuthority();
+        // 先从缓存中查找
         ContentProvider cachedProvider = sCachedProviders.get(auth);
         if (cachedProvider != null) {
             return cachedProvider;
         }
 
         synchronized (sCachedProviders) {
+            // 缓存中不存在，从插件中查找
             LoadedPlugin plugin = pluginManager.getLoadedPlugin(uri.getQueryParameter(KEY_PKG));
             if (plugin == null) {
                 try {
+                    // 加载插件
                     pluginManager.loadPlugin(new File(uri.getQueryParameter(KEY_PLUGIN)));
                 } catch (Exception e) {
                     Log.w(TAG, e);
                 }
             }
 
+            // 查找需要的 providerInfo
             final ProviderInfo providerInfo = pluginManager.resolveContentProvider(auth, 0);
             if (providerInfo != null) {
                 RunUtil.runOnUiThread(new Runnable() {
                     @Override
                     public void run() {
                         try {
+                            // 实例化 provider
                             LoadedPlugin loadedPlugin = pluginManager.getLoadedPlugin(uri.getQueryParameter(KEY_PKG));
                             ContentProvider contentProvider = (ContentProvider) Class.forName(providerInfo.name).newInstance();
                             contentProvider.attachInfo(loadedPlugin.getPluginContext(), providerInfo);

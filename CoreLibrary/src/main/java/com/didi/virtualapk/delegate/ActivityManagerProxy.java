@@ -41,6 +41,8 @@ import java.lang.reflect.Method;
 
 /**
  * @author johnsonlee
+ *
+ * 代理 ActivityManagerService AMS
  */
 public class ActivityManagerProxy implements InvocationHandler {
 
@@ -59,6 +61,14 @@ public class ActivityManagerProxy implements InvocationHandler {
         this.mActivityManager = activityManager;
     }
 
+    /**
+     * 对某些方法进行代理
+     * @param proxy
+     * @param method
+     * @param args
+     * @return
+     * @throws Throwable
+     */
     @Override
     public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
         if ("startService".equals(method.getName())) {
@@ -105,12 +115,14 @@ public class ActivityManagerProxy implements InvocationHandler {
             }
         }
 
+        // 如果不需要处理，走系统正常逻辑
         try {
             // sometimes system binder has problems.
             return method.invoke(this.mActivityManager, args);
         } catch (Throwable th) {
             Throwable c = th.getCause();
             if (c != null && c instanceof DeadObjectException) {
+                // 如果发生 binder 异常，重新获取 ams
                 // retry connect to system binder
                 IBinder ams = ServiceManager.getService(Context.ACTIVITY_SERVICE);
                 if (ams != null) {
@@ -131,15 +143,26 @@ public class ActivityManagerProxy implements InvocationHandler {
 
     }
 
+    /**
+     * public android.content.ComponentName startService(android.app.IApplicationThread caller, android.content.Intent service, java.lang.String resolvedType, boolean requireForeground, java.lang.String callingPackage, java.lang.String callingFeatureId, int userId) throws android.os.RemoteException;
+     * @param proxy
+     * @param method
+     * @param args
+     * @return
+     * @throws Throwable
+     */
     protected Object startService(Object proxy, Method method, Object[] args) throws Throwable {
         IApplicationThread appThread = (IApplicationThread) args[0];
         Intent target = (Intent) args[1];
+        // 检查 target 指向的 service 是否在插件中
         ResolveInfo resolveInfo = this.mPluginManager.resolveService(target, 0);
         if (null == resolveInfo || null == resolveInfo.serviceInfo) {
+            // 如果不再插件中，直接走默认调用
             // is host service
             return method.invoke(this.mActivityManager, args);
         }
 
+        // 如果在插件中，需要走代理方式
         return startDelegateServiceForTarget(target, resolveInfo.serviceInfo, null, RemoteService.EXTRA_COMMAND_START_SERVICE);
     }
 
@@ -168,6 +191,14 @@ public class ActivityManagerProxy implements InvocationHandler {
         return true;
     }
 
+    /**
+     * public int bindService(android.app.IApplicationThread caller, android.os.IBinder token, android.content.Intent service, java.lang.String resolvedType, android.app.IServiceConnection connection, int flags, java.lang.String callingPackage, int userId) throws android.os.RemoteException;
+     * @param proxy
+     * @param method
+     * @param args
+     * @return
+     * @throws Throwable
+     */
     protected Object bindService(Object proxy, Method method, Object[] args) throws Throwable {
         Intent target = (Intent) args[2];
         ResolveInfo resolveInfo = this.mPluginManager.resolveService(target, 0);
@@ -196,11 +227,27 @@ public class ActivityManagerProxy implements InvocationHandler {
         return true;
     }
 
+    /**
+     * 通过替换 intent 的指向，打开代理 service，然后通过代理 service 执行真正的 service 逻辑
+     * @param target
+     * @param serviceInfo
+     * @param extras
+     * @param command
+     * @return
+     */
     protected ComponentName startDelegateServiceForTarget(Intent target, ServiceInfo serviceInfo, Bundle extras, int command) {
         Intent wrapperIntent = wrapperTargetIntent(target, serviceInfo, extras, command);
         return mPluginManager.getHostContext().startService(wrapperIntent);
     }
 
+    /**
+     * 对 intent 进行包装
+     * @param target
+     * @param serviceInfo
+     * @param extras
+     * @param command
+     * @return
+     */
     protected Intent wrapperTargetIntent(Intent target, ServiceInfo serviceInfo, Bundle extras, int command) {
         // fill in service with ComponentName
         target.setComponent(new ComponentName(serviceInfo.packageName, serviceInfo.name));
@@ -210,8 +257,11 @@ public class ActivityManagerProxy implements InvocationHandler {
         boolean local = PluginUtil.isLocalService(serviceInfo);
         Class<? extends Service> delegate = local ? LocalService.class : RemoteService.class;
         Intent intent = new Intent();
+        // 转向打开代理 service
         intent.setClass(mPluginManager.getHostContext(), delegate);
+        // 将真正需要打开的 service 存到 intent 中
         intent.putExtra(RemoteService.EXTRA_TARGET, target);
+        // 传递执行逻辑 start stop bind unbind
         intent.putExtra(RemoteService.EXTRA_COMMAND, command);
         intent.putExtra(RemoteService.EXTRA_PLUGIN_LOCATION, pluginLocation);
         if (extras != null) {
@@ -221,6 +271,12 @@ public class ActivityManagerProxy implements InvocationHandler {
         return intent;
     }
 
+    /**
+     * https://www.jianshu.com/p/9bbf4ca7d729
+     * public android.content.IIntentSender getIntentSender(int type, java.lang.String packageName, android.os.IBinder token, java.lang.String resultWho, int requestCode, android.content.Intent[] intents, java.lang.String[] resolvedTypes, int flags, android.os.Bundle options, int userId) throws android.os.RemoteException;
+     * @param method
+     * @param args
+     */
     protected void getIntentSender(Method method, Object[] args) {
         String hostPackageName = mPluginManager.getHostContext().getPackageName();
         args[1] = hostPackageName;

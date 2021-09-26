@@ -8,6 +8,7 @@ import android.support.annotation.Nullable;
 
 /**
  * Created by qiaopu on 2018/6/13.
+ * 占坑 activity，如果发生异常，直接跳转回首页
  */
 public class StubActivity extends Activity {
     @Override

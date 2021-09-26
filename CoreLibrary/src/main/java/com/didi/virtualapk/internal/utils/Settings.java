@@ -21,6 +21,7 @@ import android.content.SharedPreferences;
 
 /**
  * Created by renyugang on 16/8/23.
+ * 以 sp 方式存储 so 版本信息
  */
 public class Settings {
 

@@ -38,5 +38,4 @@ public class Constants {
     
     public static final String TAG = "VA";
     public static final String TAG_PREFIX = TAG + ".";
-
 }

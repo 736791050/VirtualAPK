@@ -26,6 +26,7 @@ import java.io.File;
 
 /**
  * @author johnsonlee
+ * 解析 apk，返回 Package
  */
 public final class PackageParserCompat {
 
