@@ -17,7 +17,7 @@ ext {
     VERSION_MIN_SDK = 15
     VERSION_TARGET_SDK = 25
 
-    SOURCE_COMPATIBILITY = JavaVersion.VERSION_1_7
+    SOURCE_COMPATIBILITY = JavaVersion.VERSION_1_8
 }
 
 allprojects {

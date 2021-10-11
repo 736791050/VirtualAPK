@@ -2,6 +2,8 @@ package com.didi.virtualapk.os
 
 import org.gradle.api.Project
 
+import static com.android.builder.model.Version.ANDROID_GRADLE_PLUGIN_VERSION
+
 final class Build {
 
     public static final String GRADLE_VERSION_SDK_INT = 'va.gradle.version.sdk_int'

@@ -13,6 +13,7 @@ android {
     }
     compileOptions {
         sourceCompatibility SOURCE_COMPATIBILITY
+        targetCompatibility SOURCE_COMPATIBILITY
     }
 
     flavorDimensions "demo"
